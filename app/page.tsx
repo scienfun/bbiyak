@@ -74,10 +74,13 @@ export default function HomePage() {
     return fileValidationError(imageFile) === null;
   }, [form, imageFile]);
 
-  const submitAnalysis = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const runAnalysis = async (options?: { recheckRequested?: boolean; keepCurrentResult?: boolean }) => {
+    const recheckRequested = Boolean(options?.recheckRequested);
+    const keepCurrentResult = Boolean(options?.keepCurrentResult);
     setError(null);
-    setResult(null);
+    if (!keepCurrentResult) {
+      setResult(null);
+    }
 
     const age = Number(form.age);
     if (!Number.isFinite(age) || age <= 0) {
@@ -106,6 +109,7 @@ export default function HomePage() {
     payload.set("currentMedications", form.currentMedications);
     payload.set("alcoholOrSmoking", form.alcoholOrSmoking);
     payload.set("userQuestion", form.userQuestion);
+    payload.set("recheckRequested", String(recheckRequested));
     payload.set("image", imageFile as File);
 
     setLoading(true);
@@ -126,6 +130,15 @@ export default function HomePage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitAnalysis = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await runAnalysis();
+  };
+
+  const requestRecheck = async () => {
+    await runAnalysis({ recheckRequested: true, keepCurrentResult: true });
   };
 
   const downloadSummary = () => {
@@ -327,16 +340,45 @@ export default function HomePage() {
               </div>
             )}
 
+            {result.ocr.needsReview && (
+              <div className="notice notice-caution" style={{ marginBottom: "1rem" }}>
+                <div style={{ fontWeight: 800, marginBottom: ".4rem" }}>OCR 신뢰도 낮음: 재확인 요청 권장</div>
+                <div style={{ marginBottom: ".7rem" }}>
+                  OCR 평균 신뢰도 {result.ocr.averageConfidence}%이며 일부 항목은 오인식될 수 있습니다.
+                  {result.ocr.unknownFields.length > 0
+                    ? ` 확인 불가 항목: ${result.ocr.unknownFields.join(", ")}`
+                    : ""}
+                </div>
+                <button className="ghost-btn" type="button" onClick={requestRecheck} disabled={loading || !imageFile}>
+                  {loading ? "재확인 요청 중..." : "동일 이미지로 재확인 요청"}
+                </button>
+              </div>
+            )}
+
             <div className="surface" style={{ padding: "1rem", marginBottom: "1rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                 <div>
                   <div style={{ fontSize: ".87rem", color: "var(--ink-500)", marginBottom: ".35rem" }}>위험도 분류</div>
                   <span className={riskClass(result.analysis.riskLevel)}>{result.analysis.riskLevel}</span>
                   <p style={{ margin: ".55rem 0 0", color: "var(--ink-700)" }}>{result.analysis.riskReason}</p>
+                  <ul style={{ margin: ".55rem 0 0", paddingLeft: "1rem", color: "var(--ink-700)", lineHeight: 1.5 }}>
+                    {result.analysis.riskEvidence.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                  <p style={{ margin: ".5rem 0 0", color: "var(--ink-500)", fontSize: ".88rem" }}>
+                    분석엔진: {result.analysis.analysisProvider.toUpperCase()} · OCR: {result.ocr.provider}
+                    {typeof result.processingMs === "number" ? ` · 처리시간: ${(result.processingMs / 1000).toFixed(2)}초` : ""}
+                  </p>
                 </div>
-                <button className="secondary-btn" onClick={downloadSummary}>
-                  의사/약사에게 보여주기용 요약 다운로드
-                </button>
+                <div style={{ display: "flex", gap: ".55rem", flexWrap: "wrap" }}>
+                  <button className="ghost-btn" type="button" onClick={requestRecheck} disabled={loading || !imageFile}>
+                    {loading ? "재분석 중..." : "재확인 요청"}
+                  </button>
+                  <button className="secondary-btn" type="button" onClick={downloadSummary}>
+                    의사/약사에게 보여주기용 요약 다운로드
+                  </button>
+                </div>
               </div>
             </div>
 

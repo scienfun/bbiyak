@@ -9,6 +9,7 @@ export interface UserProfile {
   currentMedications?: string;
   alcoholOrSmoking?: string;
   userQuestion?: string;
+  recheckRequested?: boolean;
 }
 
 export interface OcrMedication {
@@ -42,7 +43,9 @@ export interface SafetyAnalysisResult {
   confidenceAndLimits: string[];
   riskLevel: RiskLevel;
   riskReason: string;
+  riskEvidence: string[];
   emergencyWarning?: string;
+  analysisProvider: "llm" | "heuristic";
 }
 
 export interface AnalyzeResponse {
@@ -50,4 +53,5 @@ export interface AnalyzeResponse {
   ocr: OcrResult;
   analysis: SafetyAnalysisResult;
   generatedAt: string;
+  processingMs?: number;
 }

@@ -13,7 +13,7 @@
 - 파이프라인
   - OCR 추출(기본 fallback, 선택적 OpenAI Vision)
   - 약 정보 구조화(name/ingredient/dose/freq/days/confidence)
-  - 안전성 분석(응급 신호 감지, 위험도 분류, 주의사항/질문 생성)
+  - 안전성 분석(LLM 우선 + 규칙기반 fallback, 응급 신호 감지, 위험도 근거 표시)
 - 출력 고정 8섹션
   1) 한 줄 요약
   2) 인식된 처방 정보 (확인 필요)
@@ -26,6 +26,7 @@
 - 결과 상단
   - 고정 면책 문구
   - 응급 가능성 탐지 시 경고 배너
+  - OCR 신뢰도 낮을 때 재확인 요청 버튼
 - 다운로드
   - 의사/약사에게 보여주기용 요약 텍스트 다운로드
 
@@ -50,10 +51,12 @@ npm run dev
 ```bash
 OPENAI_API_KEY=your_key_here
 OPENAI_VISION_MODEL=gpt-4.1-mini
+OPENAI_ANALYSIS_MODEL=gpt-4.1-mini
 ```
 
-- 설정 시 OCR을 OpenAI Vision으로 시도
+- 설정 시 OCR(OpenAI Vision) + 분석(LLM) 경로를 우선 사용
 - 미설정/실패 시 fallback OCR 사용
+- LLM 분석 실패 시 규칙기반 분석으로 자동 fallback
 
 ## 보안/개인정보 설계 메모
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildSafetyAnalysis } from "@/lib/analyze";
 import { extractPrescriptionFromImage } from "@/lib/ocr";
-import type { Gender, UserProfile } from "@/lib/types";
+import type { Gender, OcrResult, UserProfile } from "@/lib/types";
 
 const ALLOWED_FILE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png"]);
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
@@ -22,15 +22,59 @@ function ensureGender(value: string): Gender {
   return "other";
 }
 
+function maskFileName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "unknown";
+  if (trimmed.length <= 6) return `${trimmed.slice(0, 1)}***`;
+  return `${trimmed.slice(0, 3)}***${trimmed.slice(-3)}`;
+}
+
+function buildSafeLogContext(profile: UserProfile, file: File | null, ocr: OcrResult | null) {
+  return {
+    age: profile.age,
+    gender: profile.gender,
+    conditionCount: profile.conditions.length,
+    hasAllergies: Boolean(profile.allergies?.trim()),
+    hasPregnancyOrNursing: Boolean(profile.pregnancyOrNursing?.trim()),
+    hasCurrentMedications: Boolean(profile.currentMedications?.trim()),
+    hasAlcoholOrSmoking: Boolean(profile.alcoholOrSmoking?.trim()),
+    hasUserQuestion: Boolean(profile.userQuestion?.trim()),
+    recheckRequested: Boolean(profile.recheckRequested),
+    file: file
+      ? {
+          mimeType: file.type,
+          sizeBytes: file.size,
+          maskedName: maskFileName(file.name)
+        }
+      : null,
+    ocr: ocr
+      ? {
+          provider: ocr.provider,
+          averageConfidence: ocr.averageConfidence,
+          needsReview: ocr.needsReview,
+          unknownFieldCount: ocr.unknownFields.length,
+          medicationCount: ocr.medications.length
+        }
+      : null
+  };
+}
+
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  let profileForLog: UserProfile = { age: -1, gender: "other", conditions: [] };
+  let fileForLog: File | null = null;
+  let ocrForLog: OcrResult | null = null;
+
   try {
     const formData = await request.formData();
 
     const ageRaw = String(formData.get("age") || "").trim();
     const genderRaw = String(formData.get("gender") || "").trim();
     const noConditions = String(formData.get("noConditions") || "false") === "true";
+    const recheckRequested = String(formData.get("recheckRequested") || "false") === "true";
     const conditionsRaw = formData.get("conditions");
     const file = formData.get("image");
+    fileForLog = file instanceof File ? file : null;
 
     const age = Number(ageRaw);
     if (!Number.isFinite(age) || age <= 0) {
@@ -50,6 +94,12 @@ export async function POST(request: Request) {
     }
 
     const conditions = noConditions ? [] : toConditions(conditionsRaw);
+    if (!noConditions && conditions.length === 0) {
+      return NextResponse.json(
+        { error: "기저질환이 있다면 내용을 입력해 주세요. 없으면 '없음'을 선택하세요." },
+        { status: 400 }
+      );
+    }
 
     const profile: UserProfile = {
       age,
@@ -59,22 +109,33 @@ export async function POST(request: Request) {
       pregnancyOrNursing: String(formData.get("pregnancyOrNursing") || "").trim(),
       currentMedications: String(formData.get("currentMedications") || "").trim(),
       alcoholOrSmoking: String(formData.get("alcoholOrSmoking") || "").trim(),
-      userQuestion: String(formData.get("userQuestion") || "").trim()
+      userQuestion: String(formData.get("userQuestion") || "").trim(),
+      recheckRequested
     };
+    profileForLog = profile;
 
     const ocr = await extractPrescriptionFromImage(file);
-    const analysis = buildSafetyAnalysis(profile, ocr);
+    ocrForLog = ocr;
+    const analysis = await buildSafetyAnalysis(profile, ocr);
+    const processingMs = Date.now() - startedAt;
 
     return NextResponse.json(
       {
         disclaimer: DISCLAIMER,
         ocr,
         analysis,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        processingMs
       },
       { status: 200 }
     );
-  } catch {
+  } catch (error) {
+    console.error("[/api/analyze] failed", {
+      message: error instanceof Error ? error.message : "unknown error",
+      processingMs: Date.now() - startedAt,
+      context: buildSafeLogContext(profileForLog, fileForLog, ocrForLog)
+    });
+
     return NextResponse.json(
       {
         error:

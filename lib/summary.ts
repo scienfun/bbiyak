@@ -19,6 +19,16 @@ export function buildDoctorSummaryText(result: AnalyzeResponse): string {
   lines.push(result.analysis.summaryLine);
   lines.push("");
 
+  lines.push("[위험도]");
+  lines.push(`- 등급: ${result.analysis.riskLevel}`);
+  lines.push(`- 근거 요약: ${result.analysis.riskReason}`);
+  for (const item of result.analysis.riskEvidence) lines.push(`- 근거: ${item}`);
+  lines.push(`- 분석엔진: ${result.analysis.analysisProvider.toUpperCase()}`);
+  if (typeof result.processingMs === "number") {
+    lines.push(`- 처리시간: ${(result.processingMs / 1000).toFixed(2)}초`);
+  }
+  lines.push("");
+
   lines.push("[2) 인식된 처방 정보 (확인 필요)]");
   for (const item of result.analysis.recognizedPrescription) lines.push(`- ${item}`);
   lines.push("");
